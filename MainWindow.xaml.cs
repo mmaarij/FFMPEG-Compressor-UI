@@ -3,7 +3,10 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Forms;
+using System.Windows.Input;
+using System.Windows.Threading;
 
 namespace FFMPEG_Compressor
 {
@@ -12,9 +15,15 @@ namespace FFMPEG_Compressor
         string inputFile = "";
         string outputFolder = "";
 
+        private DispatcherTimer _positionTimer = new DispatcherTimer();
+        private bool _isSeekSliderDragging = false;
+
         public MainWindow()
         {
             InitializeComponent();
+
+            _positionTimer.Interval = TimeSpan.FromMilliseconds(500);
+            _positionTimer.Tick += PositionTimer_Tick;
         }
 
         private void BrowseInput_Click(object sender, RoutedEventArgs e)
@@ -27,6 +36,7 @@ namespace FFMPEG_Compressor
             {
                 inputFile = dialog.FileName;
                 txtInputPath.Text = inputFile;
+                LoadPreview_Click(sender, e);
             }
         }
 
@@ -50,8 +60,11 @@ namespace FFMPEG_Compressor
 
             SetUIEnabled(false);
             string scaleFilter = GetScaleFilter();
+            string scaleArg = string.IsNullOrEmpty(scaleFilter) ? "" : $"-vf \"{scaleFilter}\"";
             int crf = (int)sliderCrf.Value;
             string outputFile = Path.Combine(outputFolder, $"compressed_{Path.GetFileName(inputFile)}");
+            double start = rangeSlider.LowerValue;
+            double end = rangeSlider.HigherValue;
 
             txtResult.Text = "🔄 Compressing... please wait.\n";
 
@@ -61,7 +74,7 @@ namespace FFMPEG_Compressor
                 {
                     var process = new Process();
                     process.StartInfo.FileName = "ffmpeg.exe";
-                    process.StartInfo.Arguments = $"-i \"{inputFile}\" -vf \"{scaleFilter}\" -c:v libx264 -preset fast -crf {crf} -y \"{outputFile}\"";
+                    process.StartInfo.Arguments = $"-i \"{inputFile}\" -ss {start} -to {end} {scaleArg} -c:v libx264 -preset fast -crf {crf} -y \"{outputFile}\"";
                     process.StartInfo.UseShellExecute = false;
                     process.StartInfo.CreateNoWindow = true;
                     process.StartInfo.RedirectStandardError = true;
@@ -70,17 +83,12 @@ namespace FFMPEG_Compressor
                     process.ErrorDataReceived += (s, e) =>
                     {
                         if (!string.IsNullOrEmpty(e.Data))
-                        {
                             AppendToLog(e.Data);
-                        }
                     };
-
                     process.OutputDataReceived += (s, e) =>
                     {
                         if (!string.IsNullOrEmpty(e.Data))
-                        {
                             AppendToLog(e.Data);
-                        }
                     };
 
                     process.Start();
@@ -93,8 +101,18 @@ namespace FFMPEG_Compressor
                 {
                     long inputSize = new FileInfo(inputFile).Length / 1024 / 1024;
                     long outputSize = new FileInfo(outputFile).Length / 1024 / 1024;
+                    string scaleDisplay = string.IsNullOrEmpty(scaleFilter) ? "None (Original)" : scaleFilter;
 
-                    AppendToLog($"\n✅ Compression complete!\nInput: {inputSize} MB\nOutput: {outputSize} MB\nCRF: {crf}\nScale: {scaleFilter}");
+                    AppendToLog(
+                        $"\n✅ Compression complete!" +
+                        $"\nInput Size: {inputSize} MB" +
+                        $"\nOutput Size: {outputSize} MB" +
+                        $"\nCRF: {crf}" +
+                        $"\nScale: {scaleDisplay}" +
+                        $"\nStart Time: {start:0.##}s" +
+                        $"\nEnd Time: {end:0.##}s" +
+                        $"\nDuration: {end-start:0.##}s"
+                    );
                 }
                 else
                 {
@@ -111,19 +129,147 @@ namespace FFMPEG_Compressor
             }
         }
 
+        private void LoadPreview_Click(object sender, RoutedEventArgs e)
+        {
+            if (File.Exists(txtInputPath.Text))
+            {
+                mediaPreview.Source = new Uri(txtInputPath.Text);
+                mediaPreview.Position = TimeSpan.Zero;
+                mediaPreview.LoadedBehavior = MediaState.Manual;
+                mediaPreview.UnloadedBehavior = MediaState.Manual;
+
+                mediaPreview.MediaOpened += (s, args) =>
+                {
+                    double totalSeconds = mediaPreview.NaturalDuration.TimeSpan.TotalSeconds;
+                    rangeSlider.Maximum = totalSeconds;
+                    rangeSlider.LowerValue = 0;
+                    rangeSlider.HigherValue = totalSeconds;
+
+                    seekSlider.Maximum = totalSeconds;
+                    seekSlider.Value = 0;
+
+                    _positionTimer.Start();
+                };
+
+                mediaPreview.Play();
+                mediaPreview.Pause();
+            }
+        }
+
+        private void Play_Click(object sender, RoutedEventArgs e)
+        {
+            if (mediaPreview.Source != null)
+            {
+                mediaPreview.Play();
+                _positionTimer.Start();
+            }
+        }
+
+        private void Pause_Click(object sender, RoutedEventArgs e)
+        {
+            if (mediaPreview.Source != null)
+            {
+                mediaPreview.Pause();
+                _positionTimer.Stop();
+            }
+        }
+
+        private void PositionTimer_Tick(object sender, EventArgs e)
+        {
+            if (mediaPreview.Source != null && mediaPreview.NaturalDuration.HasTimeSpan)
+            {
+                double current = mediaPreview.Position.TotalSeconds;
+                if (!_isSeekSliderDragging)
+                    seekSlider.Value = current;
+
+                TimeSpan currentTime = mediaPreview.Position;
+                TimeSpan totalTime = mediaPreview.NaturalDuration.TimeSpan;
+                txtVideoTime.Text = $"{FormatTime(currentTime)} / {FormatTime(totalTime)}";
+
+                if (current >= rangeSlider.HigherValue)
+                {
+                    mediaPreview.Pause();
+                    _positionTimer.Stop();
+                }
+            }
+        }
+
+
+        private void SeekSlider_PreviewMouseDown(object sender, MouseButtonEventArgs e)
+        {
+            _isSeekSliderDragging = true;
+        }
+
+        private void SeekSlider_PreviewMouseUp(object sender, MouseButtonEventArgs e)
+        {
+            _isSeekSliderDragging = false;
+
+            // Seek to the new position
+            mediaPreview.Position = TimeSpan.FromSeconds(seekSlider.Value);
+
+            if (mediaPreview.LoadedBehavior == MediaState.Manual && mediaPreview.Clock == null)
+            {
+                if (mediaPreview.CanPause)
+                {
+                    // Trick to force update: play a frame then pause
+                    mediaPreview.Play();
+
+                    Dispatcher.InvokeAsync(async () =>
+                    {
+                        await Task.Delay(100); // Let it render a frame
+                        mediaPreview.Pause();
+                    });
+                }
+            }
+        }
+
+
+        private void SetStart_Click(object sender, RoutedEventArgs e)
+        {
+            var currentPosition = seekSlider.Value;
+            if (currentPosition < rangeSlider.HigherValue) // Ensure start is before end
+            {
+                rangeSlider.LowerValue = currentPosition;
+            }
+            else
+            {
+                System.Windows.MessageBox.Show("Start time must be less than end time.", "Invalid Range", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
+        private void SetEnd_Click(object sender, RoutedEventArgs e)
+        {
+            var currentPosition = seekSlider.Value;
+            if (currentPosition > rangeSlider.LowerValue) // Ensure end is after start
+            {
+                rangeSlider.HigherValue = currentPosition;
+            }
+            else
+            {
+                System.Windows.MessageBox.Show("End time must be greater than start time.", "Invalid Range", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
+        private string FormatTime(TimeSpan time)
+        {
+            return time.ToString(time.Hours > 0 ? @"h\:mm\:ss" : @"mm\:ss");
+        }
 
 
         private string GetScaleFilter()
         {
-            if (rb34.IsChecked == true)
+            if (rbNone.IsChecked == true)
+                return null; // No scaling
+            else if (rb34.IsChecked == true)
                 return "scale=iw*3/4:ih*3/4";
             else if (rb12.IsChecked == true)
                 return "scale=iw/2:ih/2";
             else if (rb14.IsChecked == true)
                 return "scale=iw/4:ih/4";
             else
-                return "scale=iw/2:ih/2"; // default fallback
+                return null; // Default fallback
         }
+
 
         private void SetUIEnabled(bool isEnabled)
         {
@@ -144,7 +290,5 @@ namespace FFMPEG_Compressor
                 txtResult.ScrollToEnd();
             });
         }
-
-
     }
 }
