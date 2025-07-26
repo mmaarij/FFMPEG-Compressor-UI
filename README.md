@@ -20,6 +20,23 @@ A simple yet powerful Windows desktop application built using WPF and C# for com
 
 ---
 
+## 📥 Installation Instructions
+
+### 🔽 Download
+
+Grab the latest **Setup EXE** from the [Releases page](https://github.com/mmaarij/FFMPEG-Compressor-UI/releases).
+
+- ✅ Includes FFmpeg already
+
+### ⚙️ Requirements
+
+- **.NET Desktop Runtime 8.0 (x64)**
+  Download from: [https://dotnet.microsoft.com/en-us/download/dotnet/8.0](https://dotnet.microsoft.com/en-us/download/dotnet/8.0)
+> Required only if the app doesn't launch after installation<br>
+> Make sure to install the **Desktop App Runtime** (not the SDK or ASP.NET runtime)
+
+---
+
 ## 🖼️ UI Overview
 
 - **Seek Slider**: Scrub through the video without affecting trim selection
@@ -32,7 +49,7 @@ A simple yet powerful Windows desktop application built using WPF and C# for com
 
 ## 📦 Dependencies
 
-- [.NET Framework 4.7.2+](https://dotnet.microsoft.com/en-us/)
+- [.NET 8](https://dotnet.microsoft.com/en-us/)
 - [FFmpeg](https://ffmpeg.org/) (bundled or placed in same folder as the executable)
 - [Xceed.Wpf.Toolkit](https://github.com/xceedsoftware/wpftoolkit) for range slider control
 
@@ -66,11 +83,4 @@ A simple yet powerful Windows desktop application built using WPF and C# for com
 - The FFmpeg executable (`ffmpeg.exe`) **must be available in the same directory** as the app or in the system PATH.
 - If `scale` is set to `None`, the original resolution will be preserved.
 - CRF values typically range from 18 (high quality) to 28 (low quality).
-- Audio settings are kept default; extend if needed.
-
----
-
-## 🧪 Sample FFmpeg Command
-
-```bash
-ffmpeg -i "input.mp4" -ss 5 -to 25 -vf "scale=iw/2:ih/2" -c:v libx264 -preset fast -crf 23 -y "output.mp4"
+- Audio settings are kept default.
