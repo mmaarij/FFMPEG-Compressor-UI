@@ -2,6 +2,8 @@
 
 A simple yet powerful Windows desktop application built using WPF and C# for compressing videos using FFmpeg. Includes features like video preview, trimming, resolution scaling, CRF-based compression, and file size comparison.
 
+![Screenshot](screenshot.png)
+
 ---
 
 ## 🔧 Features
